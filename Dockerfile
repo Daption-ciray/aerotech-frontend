@@ -7,11 +7,12 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
-# Build sırasında backend URL (Railway'de VITE_API_URL ile verin)
-ARG VITE_API_URL
+# Build sırasında backend URL (Railway Variables'tan gelir; boşsa build yine çalışır)
+ARG VITE_API_URL=
 ENV VITE_API_URL=${VITE_API_URL}
+ENV NODE_ENV=production
 
-RUN npm run build
+RUN npm run build:docker
 
 # Production: static dosyaları serve et
 FROM node:20-alpine
