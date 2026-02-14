@@ -247,6 +247,11 @@ function PersonnelSection({
             <p className="text-sm font-medium text-zinc-800">{String(p.name ?? "")}</p>
             <p className="text-xs text-zinc-500">{String(p.role ?? "")} · {Array.isArray(p.ratings) ? (p.ratings as string[]).join(", ") : ""}</p>
             <p className="text-xs text-zinc-600 mt-0.5">{Array.isArray(p.specializations) ? (p.specializations as string[]).join(", ") : ""}</p>
+            {p.linked_user_id && (
+              <p className="text-[11px] text-thy-red font-mono mt-1">
+                Giriş kullanıcısı: {String(p.linked_user_id)}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <span className="text-xs text-zinc-500 font-mono mr-1">{p.shift === "day" ? "Gündüz" : "Gece"}</span>

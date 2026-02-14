@@ -5,6 +5,8 @@ export interface CurrentUser {
   name: string;
   role: string;
   device_type?: string;
+  /** Çalışan listesinden seçildiyse personel id (mobil "bana atanan işler" için) */
+  personnelId?: string;
 }
 
 const UserContext = createContext<{

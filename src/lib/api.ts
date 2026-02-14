@@ -87,6 +87,15 @@ export async function fetchUserWorkPackages(userId: string) {
   return data.work_packages ?? [];
 }
 
+// Çalışan (personel) listesinden seçilen kişiye atanmış iş paketleri (personel–kullanıcı bağlantılı)
+export async function fetchPersonnelWorkPackages(personnelId: string) {
+  if (!personnelId) return [];
+  const res = await fetch(`${API_BASE}/personnel/${encodeURIComponent(personnelId)}/work-packages`);
+  if (!res.ok) throw new Error("Personnel work packages fetch failed");
+  const data = await res.json();
+  return data.work_packages ?? [];
+}
+
 // Verimlilik
 export async function fetchEfficiencyMetrics() {
   const res = await fetch(`${API_BASE}/efficiency/metrics`);

@@ -3,7 +3,7 @@ import { MobileDashboard } from "@/components/mobile/MobileDashboard";
 import { MobileAICompanion } from "@/components/mobile/MobileAICompanion";
 import { MobileFieldWidgets } from "@/components/mobile/MobileFieldWidgets";
 import { MobileNavigation } from "@/components/mobile/MobileNavigation";
-import { fetchScrumDashboard, fetchUserWorkPackages } from "@/lib/api";
+import { fetchUserWorkPackages, fetchPersonnelWorkPackages } from "@/lib/api";
 import { useUser } from "@/contexts/UserContext";
 import { DATA_UPDATED } from "@/lib/events";
 
@@ -16,33 +16,25 @@ export function MobileApp() {
   const [loading, setLoading] = useState(true);
 
   const loadTasks = async () => {
+    const assignedPromise = currentUser?.personnelId
+      ? fetchPersonnelWorkPackages(currentUser.personnelId)
+      : currentUser?.id
+        ? fetchUserWorkPackages(currentUser.id)
+        : Promise.resolve([]);
+
     try {
-      const [dashboardData, assignedPackages] = await Promise.all([
-        fetchScrumDashboard(),
-        currentUser?.id ? fetchUserWorkPackages(currentUser.id) : Promise.resolve([]),
-      ]);
+      const assignedPackages = await assignedPromise;
 
-      // Sadece ilgili teknisyene atanmış iş paketleri + referans için son sprint öğeleri
-      const sprintItems = dashboardData?.recent_items || [];
-
-      const allTasks = [
-        // Önce teknisyene atanmış iş paketleri
-        ...assignedPackages.map((pkg: any) => ({
+      // Personel/teknisyen yalnızca kendine atanmış görevleri görsün
+      const allTasks = assignedPackages
+        .map((pkg: any) => ({
           id: pkg.id || pkg.work_package_id,
           title: pkg.title || pkg.description,
           status: pkg.status,
           type: "work_package",
           priority: pkg.status === "in_progress" ? 1 : 2,
-        })),
-        // Ardından referans amaçlı sprint öğeleri (atanmamış, sadece bilgi)
-        ...sprintItems.map((item: any) => ({
-          id: item.id,
-          title: item.title,
-          status: item.status,
-          type: "sprint",
-          priority: 3,
-        })),
-      ].sort((a, b) => a.priority - b.priority);
+        }))
+        .sort((a: any, b: any) => a.priority - b.priority);
 
       setTasks(allTasks);
     } catch (error) {
@@ -58,7 +50,7 @@ export function MobileApp() {
     const handler = () => loadTasks();
     window.addEventListener(DATA_UPDATED, handler);
     return () => window.removeEventListener(DATA_UPDATED, handler);
-  }, [currentUser?.id]);
+  }, [currentUser?.id, currentUser?.personnelId]);
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 overflow-hidden">
