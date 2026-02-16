@@ -10,8 +10,6 @@ const API_BASE =
   import.meta.env.VITE_API_BASE_URL ||
   "/api";
 
-const QA_TIMEOUT_MS = 60_000; // LLM + parça görseli ~1 dk sürebilir
-
 export async function sendQuestion(question: string): Promise<{
   answer: string;
   part_diagram?: {
@@ -21,37 +19,21 @@ export async function sendQuestion(question: string): Promise<{
     reason?: string;
   } | null;
 }> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), QA_TIMEOUT_MS);
-  try {
-    const res = await fetch(`${API_BASE}/qa`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error((err as { detail?: string }).detail || `QA hatası (${res.status})`);
-    }
-    const data = await res.json();
-    return {
-      answer: data.answer ?? "",
-      part_diagram: data.part_diagram ?? null,
-    };
-  } catch (e) {
-    clearTimeout(timeoutId);
-    if (e instanceof Error) {
-      if (e.name === "AbortError")
-        throw new Error("Yanıt zaman aşımına uğradı (1 dk). Backend çalışıyor mu?");
-      throw e;
-    }
-    throw e;
+  const res = await fetch(`${API_BASE}/qa`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail || `QA hatası (${res.status})`);
   }
+  const data = await res.json();
+  return {
+    answer: data.answer ?? "",
+    part_diagram: data.part_diagram ?? null,
+  };
 }
-
-const PLAN_TIMEOUT_MS = 120_000; // 4 agent sıralı LLM çağrısı ~2 dk sürebilir
 
 export async function planMaintenance(
   faultDescription: string
@@ -61,30 +43,16 @@ export async function planMaintenance(
   resource_plan?: string;
   qa_review?: string;
 }> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), PLAN_TIMEOUT_MS);
-  try {
-    const res = await fetch(`${API_BASE}/plan`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fault_description: faultDescription }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error((err as { detail?: string }).detail || "Plan request failed");
-    }
-    return res.json();
-  } catch (e) {
-    clearTimeout(timeoutId);
-    if (e instanceof Error) {
-      if (e.name === "AbortError")
-        throw new Error("Planlama zaman aşımına uğradı (2 dk). Backend yanıt vermedi.");
-      throw e;
-    }
-    throw e;
+  const res = await fetch(`${API_BASE}/plan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fault_description: faultDescription }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail || "Plan request failed");
   }
+  return res.json();
 }
 
 // Kaynak & Ekipman
