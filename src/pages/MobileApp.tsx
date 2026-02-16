@@ -3,7 +3,7 @@ import { MobileDashboard } from "@/components/mobile/MobileDashboard";
 import { MobileAICompanion } from "@/components/mobile/MobileAICompanion";
 import { MobileFieldWidgets } from "@/components/mobile/MobileFieldWidgets";
 import { MobileNavigation } from "@/components/mobile/MobileNavigation";
-import { fetchUserWorkPackages, fetchPersonnelWorkPackages } from "@/lib/api";
+import { fetchScrumDashboard, fetchUserWorkPackages } from "@/lib/api";
 import { useUser } from "@/contexts/UserContext";
 import { DATA_UPDATED } from "@/lib/events";
 
@@ -16,25 +16,33 @@ export function MobileApp() {
   const [loading, setLoading] = useState(true);
 
   const loadTasks = async () => {
-    const assignedPromise = currentUser?.personnelId
-      ? fetchPersonnelWorkPackages(currentUser.personnelId)
-      : currentUser?.id
-        ? fetchUserWorkPackages(currentUser.id)
-        : Promise.resolve([]);
-
     try {
-      const assignedPackages = await assignedPromise;
+      const [dashboardData, assignedPackages] = await Promise.all([
+        fetchScrumDashboard(),
+        currentUser?.id ? fetchUserWorkPackages(currentUser.id) : Promise.resolve([]),
+      ]);
 
-      // Personel/teknisyen yalnızca kendine atanmış görevleri görsün
-      const allTasks = assignedPackages
-        .map((pkg: any) => ({
+      // Sadece ilgili teknisyene atanmış iş paketleri + referans için son sprint öğeleri
+      const sprintItems = dashboardData?.recent_items || [];
+
+      const allTasks = [
+        // Önce teknisyene atanmış iş paketleri
+        ...assignedPackages.map((pkg: any) => ({
           id: pkg.id || pkg.work_package_id,
           title: pkg.title || pkg.description,
           status: pkg.status,
           type: "work_package",
           priority: pkg.status === "in_progress" ? 1 : 2,
-        }))
-        .sort((a: any, b: any) => a.priority - b.priority);
+        })),
+        // Ardından referans amaçlı sprint öğeleri (atanmamış, sadece bilgi)
+        ...sprintItems.map((item: any) => ({
+          id: item.id,
+          title: item.title,
+          status: item.status,
+          type: "sprint",
+          priority: 3,
+        })),
+      ].sort((a, b) => a.priority - b.priority);
 
       setTasks(allTasks);
     } catch (error) {
@@ -50,7 +58,7 @@ export function MobileApp() {
     const handler = () => loadTasks();
     window.addEventListener(DATA_UPDATED, handler);
     return () => window.removeEventListener(DATA_UPDATED, handler);
-  }, [currentUser?.id, currentUser?.personnelId]);
+  }, [currentUser?.id]);
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 overflow-hidden">
@@ -79,11 +87,17 @@ export function MobileApp() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 min-h-0 overflow-y-auto">
-        {activeTab === "tasks" && <MobileDashboard tasks={tasks} loading={loading} />}
-        {activeTab === "ai" && <MobileAICompanion />}
-        {activeTab === "metrics" && <MobileFieldWidgets />}
+      {/* Main Content - tüm sekmeler mount kalır, state korunur */}
+      <main className="flex-1 min-h-0 overflow-y-auto relative">
+        <div className={activeTab === "tasks" ? "block h-full" : "hidden"} aria-hidden={activeTab !== "tasks"}>
+          <MobileDashboard tasks={tasks} loading={loading} />
+        </div>
+        <div className={activeTab === "ai" ? "block h-full" : "hidden"} aria-hidden={activeTab !== "ai"}>
+          <MobileAICompanion />
+        </div>
+        <div className={activeTab === "metrics" ? "block h-full" : "hidden"} aria-hidden={activeTab !== "metrics"}>
+          <MobileFieldWidgets />
+        </div>
       </main>
 
       {/* Bottom Navigation */}

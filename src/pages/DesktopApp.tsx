@@ -24,13 +24,20 @@ const PAGE_MAP: Record<TabId, React.ComponentType> = {
  */
 export function DesktopApp() {
   const [activeTab, setActiveTab] = useState<TabId>("planning");
-  const PageComponent = PAGE_MAP[activeTab];
 
   return (
     <div className="h-screen flex bg-white">
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
       <main className="flex-1 flex min-w-0 border-r border-slate-200 bg-slate-50">
-        <PageComponent />
+        {(Object.entries(PAGE_MAP) as [TabId, React.ComponentType][]).map(([tabId, PageComponent]) => (
+          <div
+            key={tabId}
+            className="flex-1 flex min-w-0 overflow-auto"
+            style={{ display: activeTab === tabId ? "flex" : "none" }}
+          >
+            <PageComponent />
+          </div>
+        ))}
         <Dashboard onNavigateToResources={() => setActiveTab("resources")} />
       </main>
     </div>

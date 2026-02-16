@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import { UserProvider, useUser } from "@/contexts/UserContext";
 import { UserSelectionScreen } from "@/components/UserSelectionScreen";
 import { MobileApp } from "@/pages/MobileApp";
@@ -6,33 +5,17 @@ import { DesktopApp } from "@/pages/DesktopApp";
 
 function AppContent() {
   const { currentUser } = useUser();
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const mobileParam = urlParams.get("mobile");
-
-    const checkMobile = () => {
-      const isMobileDevice =
-        window.innerWidth < 768 ||
-        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      setIsMobile(mobileParam === "true" || (mobileParam === null && isMobileDevice));
-    };
-
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
-  }, []);
 
   if (!currentUser) {
     return <UserSelectionScreen />;
   }
 
-  if (isMobile) {
-    return <MobileApp />;
+  // Lead → sadece masaüstü/lead sayfaları | Teknisyen → sadece mobil/çalışan sayfaları
+  if (currentUser.role === "lead") {
+    return <DesktopApp />;
   }
 
-  return <DesktopApp />;
+  return <MobileApp />;
 }
 
 export default function App() {

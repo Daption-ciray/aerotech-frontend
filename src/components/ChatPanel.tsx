@@ -9,6 +9,7 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   references?: { type: "AMM" | "EASA" | "FAA"; title: string; ref: string }[];
+  part_diagram?: { image_base64?: string; part_name?: string; verified?: boolean; reason?: string } | null;
 }
 
 // Parse assistant response for potential reference markers
@@ -73,13 +74,14 @@ export function ChatPanel() {
     setLoading(true);
 
     try {
-      const { answer } = await sendQuestion(q);
+      const { answer, part_diagram } = await sendQuestion(q);
       const { text, references } = parseReferences(answer);
       const assistantMsg: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
         content: text || answer,
         references: references.length > 0 ? references : undefined,
+        part_diagram: part_diagram ?? undefined,
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {
@@ -136,6 +138,26 @@ export function ChatPanel() {
               <p className="text-sm leading-relaxed whitespace-pre-wrap">
                 {msg.content}
               </p>
+              {msg.part_diagram?.image_base64 && (
+                <div className="mt-3 rounded border border-slate-200 overflow-hidden bg-white">
+                  <img
+                    src={`data:image/png;base64,${msg.part_diagram.image_base64}`}
+                    alt={msg.part_diagram.part_name || "Parça görseli"}
+                    className="max-w-full max-h-48 object-contain"
+                  />
+                  {msg.part_diagram.part_name && (
+                    <p className="text-xs text-zinc-500 px-2 py-1">
+                      {msg.part_diagram.part_name}
+                      {msg.part_diagram.verified !== undefined && (
+                        <span className={msg.part_diagram.verified ? " text-emerald-600" : " text-amber-600"}>
+                          {" "}
+                          • {msg.part_diagram.verified ? "Doğrulandı" : "Doğrulanamadı"}
+                        </span>
+                      )}
+                    </p>
+                  )}
+                </div>
+              )}
               {msg.references && msg.references.length > 0 && (
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   {msg.references.map((r, i) => (

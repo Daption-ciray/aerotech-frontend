@@ -7,7 +7,7 @@ import {
   Send,
   Loader2,
   Bot,
-  ChevronRight,
+  Image,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { sendQuestion } from "@/lib/api";
@@ -50,6 +50,13 @@ const QUICK_ACTIONS: QuickAction[] = [
     question: "Bu bakım işlemi hakkında genel bilgi ver",
     color: "bg-slate-100 border-slate-300 text-zinc-700",
   },
+  {
+    id: "part",
+    icon: Image,
+    label: "Parça Görseli",
+    question: "Elevator trim parçasının teknik şemasını göster",
+    color: "bg-violet-500/10 border-violet-500/30 text-violet-700",
+  },
 ];
 
 interface Message {
@@ -57,6 +64,7 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   references?: { type: "AMM" | "EASA" | "FAA"; title: string; ref: string }[];
+  part_diagram?: { image_base64?: string; part_name?: string; verified?: boolean; reason?: string } | null;
 }
 
 function parseReferences(content: string): {
@@ -101,13 +109,14 @@ export function MobileAICompanion() {
     setLoading(true);
 
     try {
-      const { answer } = await sendQuestion(action.question);
+      const { answer, part_diagram } = await sendQuestion(action.question);
       const { text, references } = parseReferences(answer);
       const assistantMsg: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
         content: text || answer,
         references: references.length > 0 ? references : undefined,
+        part_diagram: part_diagram ?? undefined,
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {
@@ -137,13 +146,14 @@ export function MobileAICompanion() {
     setLoading(true);
 
     try {
-      const { answer } = await sendQuestion(q);
+      const { answer, part_diagram } = await sendQuestion(q);
       const { text, references } = parseReferences(answer);
       const assistantMsg: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
         content: text || answer,
         references: references.length > 0 ? references : undefined,
+        part_diagram: part_diagram ?? undefined,
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {
@@ -221,6 +231,25 @@ export function MobileAICompanion() {
                 <p className="text-sm text-zinc-800 leading-relaxed whitespace-pre-wrap">
                   {msg.content}
                 </p>
+                {msg.part_diagram?.image_base64 && (
+                  <div className="mt-3 rounded-lg border-2 border-slate-200 overflow-hidden bg-white">
+                    <img
+                      src={`data:image/png;base64,${msg.part_diagram.image_base64}`}
+                      alt={msg.part_diagram.part_name || "Parça"}
+                      className="w-full max-h-40 object-contain"
+                    />
+                    {msg.part_diagram.part_name && (
+                      <p className="text-xs text-zinc-500 px-2 py-1">
+                        {msg.part_diagram.part_name}
+                        {msg.part_diagram.verified !== undefined && (
+                          <span className={msg.part_diagram.verified ? " text-emerald-600" : " text-amber-600"}>
+                            {" "}• {msg.part_diagram.verified ? "Doğrulandı" : "Doğrulanamadı"}
+                          </span>
+                        )}
+                      </p>
+                    )}
+                  </div>
+                )}
                 {msg.references && msg.references.length > 0 && (
                   <div className="mt-3 space-y-2">
                     {msg.references.map((r, i) => (

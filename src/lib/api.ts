@@ -3,20 +3,55 @@
 // - VITE_API_URL
 // - VITE_API_BASE_URL
 // Hiçbiri yoksa, local geliştirme / reverse proxy senaryosu için "/api".
+// VITE_API_URL / VITE_API_BASE_URL yoksa "/api" kullanılır → Vite proxy ile localhost:8000'e gider
+// Örn: VITE_API_URL=http://localhost:8000 ile doğrudan backend (proxy bypass)
 const API_BASE =
   import.meta.env.VITE_API_URL ||
   import.meta.env.VITE_API_BASE_URL ||
   "/api";
 
-export async function sendQuestion(question: string): Promise<{ answer: string }> {
-  const res = await fetch(`${API_BASE}/qa`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
-  });
-  if (!res.ok) throw new Error("QA request failed");
-  return res.json();
+const QA_TIMEOUT_MS = 60_000; // LLM + parça görseli ~1 dk sürebilir
+
+export async function sendQuestion(question: string): Promise<{
+  answer: string;
+  part_diagram?: {
+    image_base64?: string;
+    part_name?: string;
+    verified?: boolean;
+    reason?: string;
+  } | null;
+}> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), QA_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${API_BASE}/qa`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as { detail?: string }).detail || `QA hatası (${res.status})`);
+    }
+    const data = await res.json();
+    return {
+      answer: data.answer ?? "",
+      part_diagram: data.part_diagram ?? null,
+    };
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if (e instanceof Error) {
+      if (e.name === "AbortError")
+        throw new Error("Yanıt zaman aşımına uğradı (1 dk). Backend çalışıyor mu?");
+      throw e;
+    }
+    throw e;
+  }
 }
+
+const PLAN_TIMEOUT_MS = 120_000; // 4 agent sıralı LLM çağrısı ~2 dk sürebilir
 
 export async function planMaintenance(
   faultDescription: string
@@ -26,13 +61,30 @@ export async function planMaintenance(
   resource_plan?: string;
   qa_review?: string;
 }> {
-  const res = await fetch(`${API_BASE}/plan`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fault_description: faultDescription }),
-  });
-  if (!res.ok) throw new Error("Plan request failed");
-  return res.json();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), PLAN_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${API_BASE}/plan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fault_description: faultDescription }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as { detail?: string }).detail || "Plan request failed");
+    }
+    return res.json();
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if (e instanceof Error) {
+      if (e.name === "AbortError")
+        throw new Error("Planlama zaman aşımına uğradı (2 dk). Backend yanıt vermedi.");
+      throw e;
+    }
+    throw e;
+  }
 }
 
 // Kaynak & Ekipman
@@ -83,15 +135,6 @@ export async function fetchUserWorkPackages(userId: string) {
   if (!userId) return [];
   const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/work-packages`);
   if (!res.ok) throw new Error("User work packages fetch failed");
-  const data = await res.json();
-  return data.work_packages ?? [];
-}
-
-// Çalışan (personel) listesinden seçilen kişiye atanmış iş paketleri (personel–kullanıcı bağlantılı)
-export async function fetchPersonnelWorkPackages(personnelId: string) {
-  if (!personnelId) return [];
-  const res = await fetch(`${API_BASE}/personnel/${encodeURIComponent(personnelId)}/work-packages`);
-  if (!res.ok) throw new Error("Personnel work packages fetch failed");
   const data = await res.json();
   return data.work_packages ?? [];
 }
@@ -203,6 +246,96 @@ export async function sprintPlan(request: string): Promise<{
   return res.json();
 }
 
+// Plan review (sadece QA raporu – harici bağlam + iş paketi + kaynak planı)
+export async function reviewPlan(body: {
+  tech_context: string;
+  work_package: string;
+  resource_plan: string;
+}): Promise<{ qa_review: string }> {
+  const res = await fetch(`${API_BASE}/plan/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Plan review failed");
+  return res.json();
+}
+
+// Tamamlanan iş paketi kaydı (verimlilik analizi için)
+export async function addCompletedPackage(data: {
+  id: string;
+  work_package_id: string;
+  sprint_id?: string | null;
+  started_at: string;
+  completed_at: string;
+  first_pass_success: boolean;
+  rework_count?: number;
+  planned_minutes?: number | null;
+  actual_minutes?: number | null;
+  assigned_personnel_count?: number | null;
+  criticality?: string | null;
+}): Promise<{ status: string }> {
+  const res = await fetch(`${API_BASE}/analytics/completed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Add completed package failed");
+  return res.json();
+}
+
+// Tekil kaynak getir (detay sayfası / form düzenleme için)
+export async function getPersonnel(id: string) {
+  const res = await fetch(`${API_BASE}/resources/personnel/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error("Personnel fetch failed");
+  return res.json();
+}
+export async function getTool(id: string) {
+  const res = await fetch(`${API_BASE}/resources/tools/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error("Tool fetch failed");
+  return res.json();
+}
+export async function getPart(id: string) {
+  const res = await fetch(`${API_BASE}/resources/parts/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error("Part fetch failed");
+  return res.json();
+}
+export async function getWorkPackage(id: string) {
+  const res = await fetch(`${API_BASE}/work-packages/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error("Work package fetch failed");
+  return res.json();
+}
+
+// Kullanıcı CRUD (GET liste zaten fetchUsers)
+export async function getUser(id: string) {
+  const res = await fetch(`${API_BASE}/users/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error("User fetch failed");
+  return res.json();
+}
+export async function createUser(data: Record<string, unknown>) {
+  const res = await fetch(`${API_BASE}/users`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Create user failed");
+  return res.json();
+}
+export async function updateUser(id: string, data: Record<string, unknown>) {
+  const res = await fetch(`${API_BASE}/users/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Update user failed");
+  return res.json();
+}
+export async function deleteUser(id: string) {
+  const res = await fetch(`${API_BASE}/users/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Delete user failed");
+  return res.json();
+}
+
 // CRUD - Personnel
 export async function createPersonnel(data: Record<string, unknown>) {
   const res = await fetch(`${API_BASE}/resources/personnel`, {
@@ -285,7 +418,12 @@ export async function createWorkPackage(data: Record<string, unknown>) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error("Create failed");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { detail?: string | { msg?: string }[] };
+    const d = err?.detail;
+    const msg = typeof d === "string" ? d : Array.isArray(d) ? d.map((x) => x?.msg).filter(Boolean).join("; ") : null;
+    throw new Error(msg || res.statusText || "Create failed");
+  }
   return res.json();
 }
 export async function updateWorkPackage(id: string, data: Record<string, unknown>) {

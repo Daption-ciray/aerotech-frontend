@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle, Clock, AlertTriangle, Loader2, Plus, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fetchWorkPackages, createWorkPackage, updateWorkPackage, deleteWorkPackage, fetchPersonnel } from "@/lib/api";
+import { fetchWorkPackages, createWorkPackage, updateWorkPackage, deleteWorkPackage, fetchPersonnel, fetchUsers } from "@/lib/api";
 import { useUser } from "@/contexts/UserContext";
 import { CrudModal } from "@/components/CrudModal";
 import { notifyDataUpdated } from "@/lib/events";
@@ -173,18 +173,24 @@ function WorkPackageModal({
   const [assigned_to, setAssignedTo] = useState(editing && editing.assigned_to ? String(editing.assigned_to) : "");
   const [due_date, setDueDate] = useState(editing ? String(editing.due_date) : "2026-02-20");
   const [saving, setSaving] = useState(false);
-  const [personnel, setPersonnel] = useState<{ id: string; name: string; linked_user_id?: string | null }[]>([]);
+  const [personnel, setPersonnel] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
     let cancelled = false;
-    fetchPersonnel()
-      .then((list: { id: string; name?: string; linked_user_id?: string | null }[]) => {
-        if (!cancelled)
-          setPersonnel(Array.isArray(list) ? list.map((p) => ({ id: p.id, name: p.name ?? p.id, linked_user_id: p.linked_user_id })) : []);
-      })
-      .catch(() => {});
+    if (isLead) {
+      fetchUsers({ role: "technician" })
+        .then((users: { id: string; name?: string }[]) => {
+          if (!cancelled)
+            setPersonnel(users.map((u) => ({ id: u.id, name: u.name ?? u.id })));
+        })
+        .catch(() => {});
+    } else {
+      fetchPersonnel()
+        .then((list) => { if (!cancelled) setPersonnel(list); })
+        .catch(() => {});
+    }
     return () => { cancelled = true; };
-  }, []);
+  }, [isLead]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -246,14 +252,11 @@ function WorkPackageModal({
             className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-zinc-800"
           >
             <option value="">— Seçin veya boş bırakın —</option>
-            {personnel.map((p) => {
-              const value = p.linked_user_id ?? "";
-              return (
-                <option key={p.id} value={value} disabled={!value}>
-                  {p.name}{!value ? " (giriş hesabı yok)" : ` (${p.id})`}
-                </option>
-              );
-            })}
+            {personnel.map((p) => (
+              <option key={p.id} value={isLead ? p.id : p.name}>
+                {p.name} ({p.id})
+              </option>
+            ))}
           </select>
         </div>
         <div>
